@@ -1,0 +1,35 @@
+name: napari-lsft
+display_name: Light Sheet Fluorescence Tomography
+contributions:
+  commands:
+    - id: napari-lsft.get_reader
+      python_name: napari_lsft._reader:napari_get_reader
+      title: Open LSFT data (TIFF/HDF5/Zarr)
+    - id: napari-lsft.reconstruction_widget
+      python_name: napari_lsft._widget:LSFTReconstructionWidget
+      title: LSFT Reconstruction
+    - id: napari-lsft.write_tiff
+      python_name: napari_lsft._writer:write_tiff
+      title: Save volume as TIFF
+    - id: napari-lsft.write_hdf5
+      python_name: napari_lsft._writer:write_hdf5
+      title: Save volume as HDF5
+  readers:
+    - command: napari-lsft.get_reader
+      accepts_directories: true
+      filename_patterns:
+        - "*.tif"
+        - "*.tiff"
+        - "*.h5"
+        - "*.hdf5"
+        - "*.zarr"
+  widgets:
+    - command: napari-lsft.reconstruction_widget
+      display_name: LSFT Reconstruction
+  writers:
+    - command: napari-lsft.write_tiff
+      layer_types: ["image"]
+      filename_extensions: [".tif", ".tiff"]
+    - command: napari-lsft.write_hdf5
+      layer_types: ["image"]
+      filename_extensions: [".h5", ".hdf5"]
