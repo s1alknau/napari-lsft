@@ -53,3 +53,31 @@ def write_hdf5(
         f.attrs["shape_order"] = "X, Y_sample, Z_sample"
 
     return [path]
+
+
+def write_zarr(
+    path: str,
+    data: Any,
+    meta: dict,
+) -> List[str]:
+    """Write image layer to a Zarr store.
+
+    The reconstructed volume is (X, Y_sample, Z_sample); we chunk per
+    X-slice so consumers can lazily load individual cross-sections.
+    Works on both zarr v2 and v3.
+    """
+    import zarr
+
+    path = str(path)
+    if not path.lower().endswith(".zarr"):
+        path += ".zarr"
+
+    arr = np.asarray(data).astype(np.float32)
+    chunks = (1,) + arr.shape[1:] if arr.ndim >= 1 else None
+
+    z = zarr.open(path, mode="w", shape=arr.shape, chunks=chunks, dtype=arr.dtype)
+    z[:] = arr
+    z.attrs["description"] = "LSFT reconstruction"
+    z.attrs["shape_order"] = "X, Y_sample, Z_sample"
+
+    return [path]

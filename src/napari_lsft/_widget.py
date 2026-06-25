@@ -228,6 +228,10 @@ class LSFTReconstructionWidget(QWidget):
         btn_hdf5.clicked.connect(lambda: self._save_volume("hdf5"))
         hbox_export.addWidget(btn_hdf5)
 
+        btn_zarr = QPushButton("Save Zarr")
+        btn_zarr.clicked.connect(lambda: self._save_volume("zarr"))
+        hbox_export.addWidget(btn_zarr)
+
         layout.addWidget(grp_export)
 
         layout.addStretch()
@@ -392,4 +396,13 @@ class LSFTReconstructionWidget(QWidget):
                     )
                     f.attrs["description"] = "LSFT polar-to-Cartesian reconstruction"
                     f.attrs["shape_order"] = "X, Y_sample, Z_sample"
+                show_info(f"Saved to {path}")
+
+        elif fmt == "zarr":
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save Zarr", "", "Zarr (*.zarr)"
+            )
+            if path:
+                from ._writer import write_zarr
+                write_zarr(path, recon_layer.data, {})
                 show_info(f"Saved to {path}")

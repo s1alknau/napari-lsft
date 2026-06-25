@@ -56,9 +56,11 @@ def read_hdf5(path: Union[str, List[str]]):
     path = str(path)
 
     with h5py.File(path, "r") as f:
-        # Try common dataset names first
+        # Try common dataset names first. Guard isinstance(Dataset): a key
+        # with one of these names may be a Group (no ndim) -> skip it and
+        # fall back to the recursive search below.
         for key in ("data", "images", "projections", "stack"):
-            if key in f and f[key].ndim >= 3:
+            if key in f and isinstance(f[key], h5py.Dataset) and f[key].ndim >= 3:
                 data = f[key][:]
                 break
         else:
@@ -80,6 +82,38 @@ def read_hdf5(path: Union[str, List[str]]):
     return [(data, meta, "image")]
 
 
+def _is_zarr_array(obj) -> bool:
+    """Duck-typed check for a zarr array (works on both zarr v2 and v3).
+
+    Avoids ``isinstance(obj, zarr.hierarchy.Group)``, which breaks on
+    zarr v3 where the ``zarr.hierarchy`` module was removed. A zarr array
+    exposes ``shape``/``ndim``; a group does not.
+    """
+    return hasattr(obj, "shape") and hasattr(obj, "ndim")
+
+
+def _find_3d_zarr_array(z):
+    """Return the first 3D array in a zarr array-or-group, or None."""
+    if _is_zarr_array(z):
+        return z if z.ndim >= 3 else None
+
+    # Treat as a group: prefer common dataset names, then scan members.
+    candidates = list(("data", "images", "projections", "stack"))
+    try:
+        candidates += [k for k in z.keys() if k not in candidates]
+    except AttributeError:
+        candidates += [k for k in z if k not in candidates]
+
+    for key in candidates:
+        try:
+            member = z[key]
+        except KeyError:
+            continue
+        if _is_zarr_array(member) and member.ndim >= 3:
+            return member
+    return None
+
+
 def read_zarr(path: Union[str, List[str]]):
     """Read Zarr array as dask array for lazy loading."""
     if isinstance(path, list):
@@ -87,23 +121,11 @@ def read_zarr(path: Union[str, List[str]]):
     path = str(path)
 
     z = zarr.open(path, mode="r")
-
-    # If it's a group, find the first suitable array
-    if isinstance(z, zarr.hierarchy.Group):
-        for key in ("data", "images", "projections", "stack"):
-            if key in z and z[key].ndim >= 3:
-                z = z[key]
-                break
-        else:
-            # Find first 3D array
-            for key in z:
-                if z[key].ndim >= 3:
-                    z = z[key]
-                    break
-
-    data = da.from_zarr(z) if hasattr(z, "shape") else None
-    if data is None:
+    arr = _find_3d_zarr_array(z)
+    if arr is None:
         raise ValueError(f"No 3D dataset found in {path}")
+
+    data = da.from_zarr(arr)
 
     meta = {
         "name": Path(path).stem,

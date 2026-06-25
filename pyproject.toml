@@ -7,7 +7,7 @@ name = "napari-lsft"
 version = "0.1.0"
 description = "Light Sheet Fluorescence Tomography - 3D reconstruction from rotational light-sheet data via polar-to-Cartesian interpolation"
 readme = "README.md"
-license = "BSD-3-Clause"
+license = {text = "BSD-3-Clause"}
 authors = [
     {name = "s1alknau"},
 ]
@@ -27,6 +27,7 @@ dependencies = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: napari",
+    "License :: OSI Approved :: BSD License",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",

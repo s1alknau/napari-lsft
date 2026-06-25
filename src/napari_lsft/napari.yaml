@@ -14,6 +14,9 @@ contributions:
     - id: napari-lsft.write_hdf5
       python_name: napari_lsft._writer:write_hdf5
       title: Save volume as HDF5
+    - id: napari-lsft.write_zarr
+      python_name: napari_lsft._writer:write_zarr
+      title: Save volume as Zarr
   readers:
     - command: napari-lsft.get_reader
       accepts_directories: true
@@ -33,3 +36,6 @@ contributions:
     - command: napari-lsft.write_hdf5
       layer_types: ["image"]
       filename_extensions: [".h5", ".hdf5"]
+    - command: napari-lsft.write_zarr
+      layer_types: ["image"]
+      filename_extensions: [".zarr"]

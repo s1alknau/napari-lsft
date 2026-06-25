@@ -33,7 +33,7 @@ import pyvista as pv
 
 # Add parent src to path so we can import the plugin
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from napari_lightsheet._reconstruction import reconstruct_slice, reconstruct_volume
+from napari_lsft._reconstruction import reconstruct_slice, reconstruct_volume
 
 # =============================================
 # Configuration
