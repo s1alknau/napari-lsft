@@ -1,0 +1,101 @@
+{
+    "detectors": {
+        "LightSheet": {
+            "analogChannel": null,
+            "digitalLine": null,
+            "managerName": "GXPIPYManager",
+            "managerProperties": {
+                "cameraListIndex": 0,
+                "gxipycam": {
+                    "exposure": 10,
+                    "gain": 0,
+                    "blacklevel": 100,
+                    "image_width": 1000,
+                    "image_height": 1000,
+                    "binning": 1
+                }
+            },
+            "forAcquisition": true
+        }
+    },
+    "lasers": {
+        "635 Laser": {
+            "analogChannel": null,
+            "digitalLine": null,
+            "managerName": "ESP32LEDLaserManager",
+            "managerProperties": {
+                "rs232device": "ESP32",
+                "channel_index": 1,
+                "filter_change": false
+            },
+            "valueRangeMin": 0,
+            "valueRangeMax": 255,
+            "wavelength": 635,
+            "valueRangeStep": 1.0
+        },
+        "LED": {
+            "analogChannel": null,
+            "digitalLine": null,
+            "managerName": "ESP32LEDLaserManager",
+            "managerProperties": {
+                "rs232device": "ESP32",
+                "channel_index": 2,
+                "filter_change": false
+            },
+            "valueRangeMin": 0,
+            "valueRangeMax": 255,
+            "wavelength": 0,
+            "valueRangeStep": 1.0
+        }
+    },
+    "positioners": {
+        "ESPStage": {
+            "analogChannel": null,
+            "digitalLine": null,
+            "managerName": "ESP32StageManager",
+            "managerProperties": {
+                "rs232device": "ESP32",
+                "stepsizeA": 1
+            },
+            "axes": [
+                "X",
+                "Y",
+                "Z",
+                "A"
+            ],
+            "isPositiveDirection": true,
+            "forPositioning": true,
+            "forScanning": true
+        }
+    },
+    "rs232devices": {
+        "ESP32": {
+            "managerName": "ESP32Manager",
+            "managerProperties": {
+                "host_": "192.168.43.129",
+                "serialport": "COM3"
+            }
+        }
+    },
+    "pyroServerInfo": {
+        "name": "ImSwitchServer",
+        "host": "127.0.0.1",
+        "port": 54333
+    },
+    "rois": {
+        "Full chip": {
+            "x": 0,
+            "y": 0,
+            "w": 1000,
+            "h": 1000
+        }
+    },
+    "availableWidgets": [
+        "Settings",
+        "View",
+        "Recording",
+        "Image",
+        "Laser",
+        "Positioner"
+    ]
+}
