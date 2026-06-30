@@ -13,16 +13,19 @@ names from a particular setup JSON.
 Acquisition sequence
 --------------------
     [optional] move a translation stage axis        (off by default)
+    galvo on  -> light sheet formed                  (auto; --no-auto-galvo)
     laser on (set power, then activate)
     for each angle:  rotate A-axis by d_theta  ->  grab one frame  ->  append
     laser off
+    galvo off -> sheet stopped
     save (n_angles, height, width) TIFF  ->  feed to napari-lsft
 
 Notes
 -----
-* The light sheet / galvo is assumed to be already configured and running
-  in ImSwitch (it lives in the ESP32 firmware + ESP32 laser manager). This
-  script does not touch the galvo.
+* The galvo (light sheet) is auto-activated at measurement start and stopped
+  at the end, via the setLaserGalvo API endpoint (see imswitch_patch/). The
+  sheet stays manually controllable in the ImSwitch GUI. Use --no-auto-galvo
+  to leave galvo control entirely manual.
 * Laser power is passed straight through as a 0-255 value; PWM generation is
   handled in firmware and is not reimplemented here.
 * Frames are fetched full-bit-depth via /RecordingController/snapImage
@@ -87,6 +90,13 @@ class ImSwitchClient:
     def set_laser_active(self, name, active):
         self._get("/LaserController/setLaserActive",
                   {"laserName": name, "active": active})
+
+    def set_galvo(self, name, frequency, amplitude=1, offset=0):
+        # frequency=0 stops the sheet sweep. Needs the napari-lsft
+        # setLaserGalvo patch in the running ImSwitch.
+        self._get("/LaserController/setLaserGalvo",
+                  {"laserName": name, "frequency": frequency,
+                   "amplitude": amplitude, "offset": offset})
 
     # ---- stage / rotation ----
     def move(self, positioner, axis, dist, is_absolute=False, is_blocking=True,
@@ -206,6 +216,18 @@ def acquire(client, args):
 
     snap = client.snap_8bit if args.preview_8bit else client.snap_full
 
+    galvo_laser = args.galvo_laser or laser
+    galvo_on = args.auto_galvo and galvo_laser is not None
+
+    # Light sheet on: activate the galvo sweep BEFORE rotating, so the sheet
+    # exists for the whole scan. (Stays manually controllable via the GUI.)
+    if galvo_on:
+        print(f"Activating galvo (light sheet) on {galvo_laser!r} "
+              f"@ {args.galvo_freq} Hz...")
+        client.set_galvo(galvo_laser, args.galvo_freq, args.galvo_amplitude)
+        if args.settle > 0:
+            time.sleep(args.settle)
+
     # Illumination on.
     if laser:
         client.set_laser_value(laser, args.laser_power)
@@ -229,6 +251,8 @@ def acquire(client, args):
     finally:
         if laser:
             client.set_laser_active(laser, False)
+        if galvo_on:
+            client.set_galvo(galvo_laser, 0)  # stop the sheet sweep
 
     stack = np.stack(frames, axis=0)  # (n_angles, height, width)
     print(f"Stack: {stack.shape} {stack.dtype}")
@@ -265,6 +289,18 @@ def build_parser():
     # illumination
     p.add_argument("--laser-power", type=float, default=128,
                    help="0-255; passed straight through (PWM is in firmware)")
+    # galvo / light sheet
+    p.add_argument("--no-auto-galvo", dest="auto_galvo", action="store_false",
+                   help="do NOT auto-activate the galvo; control the sheet "
+                        "manually in the ImSwitch GUI instead")
+    p.add_argument("--galvo-laser", default=None,
+                   help="laser whose ESP32 galvo forms the sheet "
+                        "(default: the illumination laser)")
+    p.add_argument("--galvo-freq", type=float, default=10,
+                   help="galvo sweep frequency (Hz) used to form the sheet")
+    p.add_argument("--galvo-amplitude", type=float, default=1,
+                   help="galvo sweep amplitude")
+    p.set_defaults(auto_galvo=True)
     # camera
     p.add_argument("--exposure", type=float, default=None)
     p.add_argument("--settle", type=float, default=0.05,

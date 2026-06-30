@@ -36,14 +36,28 @@ be rotated until you add `"A"`. The `ESP32StageManager` already supports the
 A-axis; it just has to be declared.
 
 The galvo / light sheet is **not** a separate device — it is driven by the
-ESP32 firmware through the `ESP32LEDLaserManager`. Configure the sheet as usual
-in ImSwitch; this script does not touch the galvo.
+ESP32 firmware through the `ESP32LEDLaserManager`. It stays manually
+controllable in the ImSwitch GUI (Holo widget), and the acquisition also
+activates it automatically at measurement start (see step 2b).
 
 ## 2. Run ImSwitch with the HTTP server
 
 Start ImSwitch with that setup. The script talks to the FastAPI server
 (default port **8001**). Confirm it is up by opening
 `http://127.0.0.1:8001/SettingsController/getDetectorNames` in a browser.
+
+### 2b. Galvo API patch (one-time)
+
+So the script can switch the light sheet on at measurement start, ImSwitch
+needs a small galvo endpoint it doesn't ship with. Apply it once (with
+ImSwitch's env), then restart ImSwitch:
+
+```bash
+python imswitch_patch/add_galvo_endpoint.py
+```
+
+See [`imswitch_patch/`](imswitch_patch/). Manual GUI control is unaffected; use
+`--no-auto-galvo` if you'd rather toggle the sheet yourself in the GUI.
 
 ## 3. Record a stack
 
