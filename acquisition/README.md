@@ -46,18 +46,30 @@ Start ImSwitch with that setup. The script talks to the FastAPI server
 (default port **8001**). Confirm it is up by opening
 `http://127.0.0.1:8001/SettingsController/getDetectorNames` in a browser.
 
-### 2b. Galvo API patch (one-time)
+### 2b. ImSwitch patches (one-time per install)
 
-So the script can switch the light sheet on at measurement start, ImSwitch
-needs a small galvo endpoint it doesn't ship with. Apply it once (with
-ImSwitch's env), then restart ImSwitch:
+LSFT needs two things ImSwitch doesn't ship with: a galvo/light-sheet endpoint
+(`setLaserGalvo`) and a native rotator for the ESP32 A-axis
+(`ESP32RotatorManager`, Route B). Apply **both** to an ImSwitch install with one
+command (run it with that ImSwitch's env), then restart ImSwitch:
 
 ```bash
-python imswitch_patch/add_galvo_endpoint.py
+python imswitch_patch/install_lsft_patches.py
 ```
 
-See [`imswitch_patch/`](imswitch_patch/). Manual GUI control is unaffected; use
-`--no-auto-galvo` if you'd rather toggle the sheet yourself in the GUI.
+Run it **once per installed ImSwitch version** — for a source checkout that
+isn't importable, point at it explicitly:
+
+```bash
+python imswitch_patch/install_lsft_patches.py --imswitch-root C:\path\to\ImSwitch\imswitch
+```
+
+Patches live inside the ImSwitch package, so an ImSwitch reinstall/upgrade drops
+them — just re-run this afterwards. `--revert` undoes both. The individual
+installers ([`add_galvo_endpoint.py`](imswitch_patch/add_galvo_endpoint.py),
+[`rotator/add_esp32_rotator.py`](imswitch_patch/rotator/add_esp32_rotator.py))
+still exist if you want to apply just one. Manual galvo control in the GUI is
+unaffected; use `--no-auto-galvo` to toggle the sheet yourself.
 
 ## 3. Record a stack
 
