@@ -2,6 +2,10 @@
 
 **Light Sheet Fluorescence Tomography** — napari plugin for 3D reconstruction from rotational light-sheet microscopy data.
 
+![Rotational light-sheet tomography principle](examples/lsft_nema_hd_anim.gif)
+
+*Principle, shown on a* Nematostella vectensis *phantom: a thin light sheet optically sections the sample inside the capillary while it rotates about the capillary (X) axis. Each rotation angle contributes a polar slice of the YZ cross-section, which is regridded (polar → Cartesian) into the reconstructed 3D volume.*
+
 ## Geometry
 
 This plugin reconstructs 3D volumes from a specific optical setup:
