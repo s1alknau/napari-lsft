@@ -21,8 +21,8 @@ that differ per rig:
 
 | Field | What to set |
 |-------|-------------|
-| `rs232devices.ESP32.serialport` | your ESP32 COM port (e.g. `COM3`) |
-| `detectors.*.managerName` / `cameraListIndex` | your camera + index |
+| `rs232devices.ESP32.serialport` | left as `"auto"` — the ESP32 COM port is auto-detected (UC2-REST scans for the CH340/CP2102/USB-serial bridge). Only hardcode a port (e.g. `"COM3"`) if auto-detect picks the wrong device. |
+| `detectors.*.cameraListIndex` | index of your camera (Daheng MER2-1220 via `GXPIPYManager`; `0` for a single camera). Not a COM port — USB3 cameras are addressed by list index. |
 | `positioners.ESPStage.managerProperties.stepsizeA` | rotation step calibration |
 
 **The one non-negotiable bit:** the positioner must list the rotation axis:

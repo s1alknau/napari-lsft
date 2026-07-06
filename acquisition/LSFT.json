@@ -72,8 +72,7 @@
         "ESP32": {
             "managerName": "ESP32Manager",
             "managerProperties": {
-                "host_": "192.168.43.129",
-                "serialport": "COM3"
+                "serialport": "auto"
             }
         }
     },
