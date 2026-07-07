@@ -42,8 +42,10 @@ def acquire_stack(
     rotate_speed: int = 15000,
     move_stage: Optional[dict] = None,
     transpose: bool = False,
+    output: Optional[str] = None,
+    return_stack: bool = True,
     progress_callback: Optional[Callable[[int, int], None]] = None,
-) -> np.ndarray:
+):
     """Record a rotational light-sheet stack.
 
     Parameters
@@ -70,16 +72,29 @@ def acquire_stack(
         default). Only applied if given.
     transpose : bool
         Swap frame axes so axis1 = X (capillary), axis2 = Y_lab.
+    output : str, optional
+        If given, raw frames are written incrementally to this HDF5/Zarr path
+        (by extension), one angle at a time - crash-safe and RAM-friendly for
+        long scans.
+    return_stack : bool
+        If True (default), also return the full stack in memory. Set False for
+        very large scans that are streamed to ``output`` instead.
     progress_callback : callable, optional
         Called with ``(current, total)`` after each frame.
 
     Returns
     -------
-    np.ndarray
-        Stack of shape ``(n_angles, height, width)``.
+    np.ndarray or str or None
+        The ``(n_angles, height, width)`` stack if ``return_stack`` else the
+        ``output`` path (or None if neither).
     """
     sweep = angle_stop - angle_start
     step_deg = sweep / n_angles
+
+    writer = None
+    if output is not None:
+        from ._writer import IncrementalStackWriter
+        writer = IncrementalStackWriter(output, n_frames=n_angles)
 
     # Optional stage translation (off by default).
     if move_stage:
@@ -98,22 +113,29 @@ def acquire_stack(
 
     controller.laser_on(value=laser_value, channel=laser_channel)
 
-    frames = []
+    frames = [] if return_stack else None
     try:
         for i in range(n_angles):
             if i > 0:  # first frame at the start angle, then advance
                 controller.rotate(step_deg, speed=rotate_speed, blocking=True)
             if settle > 0:
                 time.sleep(settle)
-            frame = source.get_frame()
+            frame = np.asarray(source.get_frame())
             if transpose:
-                frame = np.asarray(frame).T
-            frames.append(np.asarray(frame))
+                frame = frame.T
+            if writer is not None:
+                writer.append(frame)
+            if frames is not None:
+                frames.append(frame)
             if progress_callback:
                 progress_callback(i + 1, n_angles)
     finally:
         controller.laser_off(channel=laser_channel)
         if auto_galvo:
             controller.light_sheet_off()
+        if writer is not None:
+            writer.close()
 
-    return np.stack(frames, axis=0)
+    if frames is not None:
+        return np.stack(frames, axis=0)
+    return output
