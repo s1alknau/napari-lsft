@@ -25,13 +25,6 @@ dependencies = [
     "magicgui",
 ]
 
-[project.optional-dependencies]
-# Direct ESP32 (UC2) control + pulling frames from ImSwitch over HTTP
-control = ["UC2-REST", "requests"]
-# Live Socket.IO frame stream from ImSwitch
-stream = ["python-socketio[client]", "msgpack"]
-# Grab frames straight from a Daheng camera (also needs the Galaxy SDK)
-daheng = ["gxipy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: napari",
@@ -41,6 +34,14 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
+
+[project.optional-dependencies]
+# Direct ESP32 (UC2) control + pulling frames from ImSwitch over HTTP
+control = ["UC2-REST", "requests"]
+# Live Socket.IO frame stream from ImSwitch
+stream = ["python-socketio[client]", "msgpack"]
+# Grab frames straight from a Daheng camera (also needs the Galaxy SDK)
+daheng = ["gxipy"]
 
 [project.urls]
 "Bug Tracker" = "https://github.com/s1alknau/napari-lsft/issues"
