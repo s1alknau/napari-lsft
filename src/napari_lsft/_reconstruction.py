@@ -234,7 +234,21 @@ def reconstruct_volume(
         representing (X, Y_sample, Z_sample).
     """
     data = np.asarray(data, dtype=np.float32)
+    if data.ndim != 3:
+        raise ValueError(
+            f"Reconstruction expects a 3D stack (n_angles, n_x, n_y_lab), "
+            f"but got a {data.ndim}D array of shape {data.shape}."
+        )
     n_angles, n_x, n_y = data.shape
+    if n_angles < 2:
+        raise ValueError(
+            f"Reconstruction needs at least 2 rotation angles, but the first "
+            f"axis has size {n_angles} (input shape {data.shape}). The rotation "
+            f"angle must be the FIRST axis: (n_angles, n_x, n_y_lab). If your "
+            f"stack has the angle on another axis, transpose it; if you selected "
+            f"a single frame or a reconstructed volume, pick the rotational "
+            f"stack layer instead."
+        )
 
     # Downsample if requested
     if downsample < 1.0:

@@ -38,15 +38,57 @@ def napari_get_reader(
 
 
 def read_tiff(path: Union[str, List[str]]):
-    """Read a TIFF stack as (n_angles, height, width)."""
+    """Read a TIFF stack as (n_angles, height, width).
+
+    Some acquisition TIFFs store one frame per page but carry series metadata
+    that collapses to a single frame (e.g. ``series.shape == (1, H, W)`` with
+    many pages), which would otherwise load as a single-angle stack. When the
+    page count does not match the first axis we stack the pages explicitly
+    (lazily, via dask) so large multi-GB rotational stacks load correctly and
+    without reading everything into RAM at once.
+    """
     if isinstance(path, list):
         path = path[0]
-    data = tifffile.imread(str(path))
+    path = str(path)
+
+    with tifffile.TiffFile(path) as tif:
+        n_pages = len(tif.pages)
+        page_shape = tif.pages[0].shape
+        page_dtype = tif.pages[0].dtype
+        single = tif.asarray() if n_pages == 1 else None
+
+    if n_pages > 1:
+        data = _lazy_tiff_page_stack(path, n_pages, page_shape, page_dtype)
+    else:
+        data = single
+
     meta = {
         "name": Path(path).stem,
-        "metadata": {"source": str(path), "format": "tiff"},
+        "metadata": {"source": path, "format": "tiff"},
     }
     return [(data, meta, "image")]
+
+
+def _lazy_tiff_page_stack(path, n_pages, shape, dtype):
+    """Return a lazy (n_pages, H, W) dask array, one TIFF page per angle.
+
+    Each page is read independently via ``tifffile.imread(path, key=i)`` (a
+    fresh open per page) so reads are correct under lazy/parallel execution and
+    bypass any misdetected series shape. Falls back to an eager keyed read if
+    dask is unavailable.
+    """
+    try:
+        import dask
+        import dask.array as da
+
+        arrays = [
+            da.from_delayed(dask.delayed(tifffile.imread)(path, key=i),
+                            shape=shape, dtype=dtype)
+            for i in range(n_pages)
+        ]
+        return da.stack(arrays, axis=0)
+    except Exception:
+        return tifffile.imread(path, key=range(n_pages))
 
 
 def read_hdf5(path: Union[str, List[str]]):
