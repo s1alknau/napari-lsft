@@ -38,6 +38,16 @@ z_sample = y_lab · sin(θ)
 
 This is a **polar sampling** of the YZ cross-section. Reconstruction is therefore a coordinate transformation (polar → Cartesian), not an inverse Radon transform.
 
+## Hardware & firmware
+
+The rig is driven by an ESP32 that switches the laser and rotates the
+capillary; the light sheet itself is swept by a separate UC2 galvo board. The
+ESP32 firmware lives in [`firmware/`](firmware/) and speaks the UC2-REST
+protocol, so the napari plugin, ImSwitch and
+[`acquire_lsft.py`](acquisition/acquire_lsft.py) all talk to it unchanged. See
+[firmware/README.md](firmware/README.md) for the pin map, flashing and —
+importantly — the rotation calibration.
+
 ## Installation
 
 ```bash
