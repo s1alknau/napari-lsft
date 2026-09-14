@@ -10,7 +10,7 @@ contributions:
       title: LSFT Reconstruction
     - id: napari-lsft.control_widget
       python_name: napari_lsft._control_widget:LSFTControlWidget
-      title: LSFT Control &amp; Acquisition
+      title: LSFT Control & Acquisition
     - id: napari-lsft.write_tiff
       python_name: napari_lsft._writer:write_tiff
       title: Save volume as TIFF
@@ -33,7 +33,7 @@ contributions:
     - command: napari-lsft.reconstruction_widget
       display_name: LSFT Reconstruction
     - command: napari-lsft.control_widget
-      display_name: LSFT Control &amp; Acquisition
+      display_name: LSFT Control & Acquisition
   writers:
     - command: napari-lsft.write_tiff
       layer_types: ["image"]

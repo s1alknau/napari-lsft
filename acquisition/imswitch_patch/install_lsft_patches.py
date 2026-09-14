@@ -5,8 +5,12 @@ step, so LSFT acquisition works across every installed ImSwitch version:
 
   1. setLaserGalvo  @APIExport  (galvo / light-sheet control over HTTP)
   2. ESP32RotatorManager        (native rotator for the UC2 ESP32 A-axis)
-  3. force_pyqt5                 (applaunch.py: force PyQt5, not PySide6, so
-                                 ImSwitch's PyQt5 widgets and napari/vispy agree)
+
+There used to be a third patch, force_pyqt5, which pinned ImSwitch's Qt backend
+to PyQt5 so its widgets and napari/vispy agreed on one binding. It is gone: the
+nematostella-rig branch now picks the backend itself and prefers PySide6, the
+rig environment has no PyQt5 installed at all, and napari-lsft imports Qt only
+through qtpy. Re-applying it would force a binding that is not there.
 
 Because patches live inside the ImSwitch package, they are lost on an ImSwitch
 reinstall/upgrade -- just re-run this once per environment afterwards.
@@ -30,7 +34,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 GALVO_INSTALLER = HERE / "add_galvo_endpoint.py"
 ROTATOR_INSTALLER = HERE / "rotator" / "add_esp32_rotator.py"
-PYQT5_INSTALLER = HERE / "force_pyqt5.py"
 
 
 def find_imswitch_root(explicit):
@@ -69,13 +72,11 @@ def main(argv=None):
     root = find_imswitch_root(args.imswitch_root)
     laser_controller = root / "imcontrol" / "controller" / "controllers" / "LaserController.py"
     rotators_dir = root / "imcontrol" / "model" / "managers" / "rotators"
-    applaunch = root / "imcommon" / "applaunch.py"
 
     print(f"Target ImSwitch: {root}")
     rc = 0
     rc |= run(GALVO_INSTALLER, laser_controller, args.revert)
     rc |= run(ROTATOR_INSTALLER, rotators_dir, args.revert)
-    rc |= run(PYQT5_INSTALLER, applaunch, args.revert)
     print("\nDone." + ("" if args.revert else
           " Restart ImSwitch to load the new endpoint + rotator."))
     sys.exit(1 if rc else 0)

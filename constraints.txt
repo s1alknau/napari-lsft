@@ -1,0 +1,70 @@
+# Shared constraints for the Nematostella rig environment (conda env `imswitch21`).
+#
+# Five projects are editable-installed side by side in that one environment:
+#
+#   imswitchuc2               2.1.191   s1alknau/ImSwitch @ nematostella-rig
+#   napari_lsft               0.1.0     this repository
+#   napari_timelapse_capture  2.0.0     s1alknau/Nematostella-time-series
+#   napari_hdf5_activity      0.2.0
+#   lens_sensor               0.1.0
+#
+# Because they share one interpreter, the *narrowest* requirement among them
+# wins for every package. Installing any one of them with a bare
+# `pip install -e .` lets pip re-resolve and drift the shared packages -- that
+# is how pydantic jumped from 2.11.4 to 2.13.5 and broke ImSwitch's pin.
+#
+# Use this file to stop that:
+#
+#     pip install -e . -c constraints.txt
+#
+# or, when the dependencies are already present (the usual case here):
+#
+#     pip install -e . --no-deps
+#
+# Versions below are the set verified working on 2026-09-11: ImSwitch imports
+# and instantiates its models, npe2 loads every plugin manifest, both
+# napari-lsft widgets build, and a simulated acquisition reconstructs.
+
+# --- Python ------------------------------------------------------------------
+# Not expressible in a constraints file. Required floor is >=3.11 (ImSwitch and
+# napari 0.9 both demand it); the rig runs 3.12.
+
+# --- The three that actually constrain each other ----------------------------
+
+# npe2 requires `!=2.11.*`, the ImSwitch fork's pyproject/setup.py ask for
+# `==2.11.4`. Those cannot both hold. npe2 wins: its exclusion is deliberate and
+# specific, ImSwitch's pin is a blanket one and demonstrably not needed -- with
+# 2.13.5 ImSwitch imports and builds its models fine. Fix the fork's pin to
+# `pydantic>=2.8,!=2.11.*` so the declaration matches reality.
+pydantic==2.13.5
+
+# napari-metadata needs >=0.8.2; napari (>=0.7.4) and magicgui (>=0.7.2) impose
+# no ceiling, so this satisfies everyone.
+superqt==0.8.2
+
+# The ImSwitch fork pins these two exactly. Nothing else here objects, so they
+# set the version for the whole environment.
+numpy==2.1.2
+scikit-image==0.25.2
+
+# --- The rest of the verified set --------------------------------------------
+napari==0.9.1
+npe2==0.9.0
+scipy==1.16.3
+qtpy==2.4.3
+magicgui==0.10.1
+h5py==3.15.1
+zarr==3.1.5
+pyserial==3.5
+Pillow==11.3.0
+
+# --- Qt binding ---------------------------------------------------------------
+# PySide6 only. Do NOT let PyQt5 into this environment: both bindings in one
+# process makes vispy refuse to start ("Refusing to import PySide6 because
+# PyQt5.QtCore already imported"), and napari dies with it.
+#
+# Two extras would drag PyQt5 in if anyone installed them, so don't:
+#   - ImSwitch fork:            napari[pyqt5]  (its PyQt5 extra)
+#   - Nematostella-time-series: pyqt5          (its `test` extra)
+# No project should declare a Qt binding at all; napari brings it.
+PySide6==6.8.3
