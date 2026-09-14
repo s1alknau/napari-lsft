@@ -51,12 +51,37 @@ import tifffile
 # ---------------------------------------------------------------------------
 
 class ImSwitchClient:
-    """Calls ImSwitch @APIExport methods as GET /{Controller}/{method}."""
+    """Calls ImSwitch @APIExport methods as GET /{Controller}/{method}.
+
+    Where those live depends on the ImSwitch version: recent builds serve the
+    API over HTTPS (self-signed) under an /api prefix, older ones over plain
+    HTTP at the root. `base_url` is auto-detected unless passed explicitly.
+    """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8001,
-                 timeout: float = 30.0):
-        self.base = f"http://{host}:{port}"
+                 timeout: float = 30.0, base_url: Optional[str] = None):
         self.timeout = timeout
+        self._session = requests.Session()
+        # The server ships a self-signed cert, so verification would always
+        # fail; it is a loopback connection to the user's own microscope.
+        self._session.verify = False
+        requests.packages.urllib3.disable_warnings()
+        self.base = base_url.rstrip("/") if base_url else self._detect(host, port)
+
+    def _detect(self, host: str, port: int) -> str:
+        probe = "/SettingsController/getDetectorNames"
+        candidates = [f"https://{host}:{port}/api", f"http://{host}:{port}/api",
+                      f"https://{host}:{port}", f"http://{host}:{port}"]
+        for base in candidates:
+            try:
+                if self._session.get(base + probe, timeout=5).status_code == 200:
+                    return base
+            except requests.RequestException:
+                continue
+        raise SystemExit(
+            f"Cannot reach the ImSwitch API on {host}:{port}. Is ImSwitch running "
+            f"with its server enabled? Tried: {', '.join(candidates)}"
+        )
 
     def _get(self, route: str, params: Optional[dict] = None, raw: bool = False):
         # FastAPI parses query params; booleans must be lower-case strings.
@@ -65,7 +90,8 @@ class ImSwitchClient:
             if v is None:
                 continue
             clean[k] = "true" if v is True else "false" if v is False else v
-        r = requests.get(f"{self.base}{route}", params=clean, timeout=self.timeout)
+        r = self._session.get(f"{self.base}{route}", params=clean,
+                              timeout=self.timeout)
         r.raise_for_status()
         return r if raw else r.json()
 
@@ -269,6 +295,9 @@ def build_parser():
     # server
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8001)
+    p.add_argument("--base-url", default=None,
+                   help="full API base, e.g. https://127.0.0.1:8001/api "
+                        "(default: auto-detect scheme and /api prefix)")
     # geometry
     p.add_argument("--n-angles", type=int, required=True,
                    help="number of rotation steps / frames")
@@ -323,7 +352,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    client = ImSwitchClient(args.host, args.port)
+    client = ImSwitchClient(args.host, args.port, base_url=args.base_url)
     try:
         client.detector_names()  # connectivity probe
     except Exception as e:
