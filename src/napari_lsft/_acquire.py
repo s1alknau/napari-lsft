@@ -38,6 +38,7 @@ def acquire_stack(
     auto_galvo: bool = True,
     galvo_freq: float = 10.0,
     galvo_amplitude: float = 1.0,
+    sheet=None,
     settle: float = 0.05,
     rotate_speed: int = 15000,
     move_stage: Optional[dict] = None,
@@ -61,6 +62,11 @@ def acquire_stack(
         signed-radius reconstruction).
     laser_value : int
         Laser power 0-255 (PWM handled in firmware).
+    sheet : object, optional
+        Device that forms the light sheet, exposing ``light_sheet_on`` and
+        ``light_sheet_off``. Defaults to ``controller``; pass a
+        :class:`~napari_lsft._galvo.GalvoScanner` when the sweep lives on the
+        separate UC2 galvo board rather than on the ESP32's own DAC.
     auto_galvo : bool
         Activate the galvo light sheet before rotating and stop it after.
     galvo_freq, galvo_amplitude : float
@@ -91,6 +97,26 @@ def acquire_stack(
     sweep = angle_stop - angle_start
     step_deg = sweep / n_angles
 
+    # Plan the scan in whole motor steps where the controller can do it. The
+    # axis cannot resolve finer than one step, so rounding each increment on
+    # its own only scatters the frames around the intended angles; distributing
+    # the total across the scan keeps every frame within half a step of where
+    # it belongs, however many angles are requested.
+    steps_per_turn = getattr(controller, "steps_per_turn", 0)
+    increments = None
+    if steps_per_turn and hasattr(controller, "rotate_steps"):
+        total_steps = round(sweep / 360.0 * steps_per_turn)
+        plan = [round(i * total_steps / n_angles) for i in range(n_angles)]
+        increments = [plan[i] - plan[i - 1] for i in range(1, n_angles)]
+
+    def advance(index):
+        """Move from frame ``index - 1`` to frame ``index``."""
+        if increments is not None:
+            controller.rotate_steps(increments[index - 1], speed=rotate_speed,
+                                    blocking=True)
+        else:
+            controller.rotate(step_deg, speed=rotate_speed, blocking=True)
+
     writer = None
     if output is not None:
         from ._writer import IncrementalStackWriter
@@ -106,8 +132,9 @@ def acquire_stack(
         )
 
     # Light sheet on before rotating so it exists for the whole scan.
+    sheet = controller if sheet is None else sheet
     if auto_galvo:
-        controller.light_sheet_on(frequency=galvo_freq, amplitude=galvo_amplitude)
+        sheet.light_sheet_on(frequency=galvo_freq, amplitude=galvo_amplitude)
         if settle > 0:
             time.sleep(settle)
 
@@ -117,7 +144,7 @@ def acquire_stack(
     try:
         for i in range(n_angles):
             if i > 0:  # first frame at the start angle, then advance
-                controller.rotate(step_deg, speed=rotate_speed, blocking=True)
+                advance(i)
             if settle > 0:
                 time.sleep(settle)
             frame = np.asarray(source.get_frame())
@@ -132,7 +159,7 @@ def acquire_stack(
     finally:
         controller.laser_off(channel=laser_channel)
         if auto_galvo:
-            controller.light_sheet_off()
+            sheet.light_sheet_off()
         if writer is not None:
             writer.close()
 

@@ -19,6 +19,13 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
+#: Half-steps per full revolution of the capillary axis. This is a property of
+#: the hardware, not a setting: the 28BYJ-48 runs in half-step mode, giving 4096
+#: per turn nominally (the datasheet's rounded 1:64) and about 4076 with the
+#: real 63.68395:1 gearbox. Measure it once on the rig and correct it here --
+#: over a 180 deg scan the difference is roughly 0.9 deg of accumulated angle.
+STEPS_PER_TURN = 4096
+
 
 class ESP32NotAvailable(RuntimeError):
     """Raised when uc2rest is missing or the ESP32 could not be reached."""
@@ -48,7 +55,7 @@ class ESP32Controller:
         serialport: str = "auto",
         baudrate: int = 115200,
         host: Optional[str] = None,
-        steps_per_turn: int = 3200,
+        steps_per_turn: int = STEPS_PER_TURN,
         rotation_axis: str = "A",
     ):
         self.serialport = serialport
@@ -89,6 +96,47 @@ class ESP32Controller:
     @property
     def is_connected(self) -> bool:
         return bool(self._client is not None and getattr(self._client, "is_connected", False))
+
+    @property
+    def actual_port(self) -> Optional[str]:
+        """The port UC2-REST really opened -- not the one it was asked for.
+
+        ``UC2Client.serial.serialport`` echoes back the *requested* port even
+        when the firmware check failed and UC2-REST silently re-scanned and
+        landed on a different board (see ``mserial.openDevice``). Only the open
+        handle tells the truth, so read it from there.
+        """
+        ser = getattr(self._client, "serial", None)
+        dev = getattr(ser, "serialdevice", None)
+        return getattr(dev, "port", None)
+
+    def identify(self) -> str:
+        """One-line description of the board actually on the other end."""
+        if self._client is None:
+            return "not connected"
+        if not self.is_connected:
+            return "MOCK - no board answered (commands go nowhere)"
+
+        port = self.actual_port or "?"
+        name = version = None
+        try:
+            state = self._client.state.get_state()
+            if isinstance(state, list) and state:
+                state = state[0]
+            if isinstance(state, dict):
+                inner = state.get("state", state)
+                name = inner.get("identifier_name")
+                version = inner.get("identifier_id")
+        except Exception:  # pragma: no cover - hardware dependent
+            pass
+
+        board = " ".join(str(x) for x in (name, version) if x) or "unknown board"
+        requested = self.serialport
+        note = ""
+        if requested and requested != "auto" and port and requested != port:
+            # The classic UC2-REST trap: asked for one board, got another.
+            note = f"  [!] angefordert war {requested}"
+        return f"{port} - {board}{note}"
 
     def close(self):
         if self._client is not None:
@@ -175,6 +223,26 @@ class ESP32Controller:
         steps = self._deg_to_steps(degrees)
         self.client.motor.move_a(
             steps, speed, acceleration=acceleration,
+            is_absolute=is_absolute, is_blocking=blocking, timeout=timeout,
+        )
+
+    def rotate_steps(
+        self,
+        steps: int,
+        speed: int = 15000,
+        is_absolute: bool = False,
+        blocking: bool = True,
+        acceleration=None,
+        timeout: float = 30,
+    ):
+        """Rotate by/to a whole number of motor steps.
+
+        The finest move the axis can make is one step, so a scan that plans in
+        steps avoids converting to degrees and back -- and avoids the rounding
+        error that accumulates when every increment is rounded on its own.
+        """
+        self.client.motor.move_a(
+            int(steps), speed, acceleration=acceleration,
             is_absolute=is_absolute, is_blocking=blocking, timeout=timeout,
         )
 

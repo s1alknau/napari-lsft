@@ -23,12 +23,14 @@ from qtpy.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -36,8 +38,14 @@ from qtpy.QtWidgets import (
 
 from ._acquire import acquire_stack
 from ._camera import make_frame_source
+from ._galvo import GalvoNotAvailable, GalvoScanner
 from ._hardware import ESP32Controller, ESP32NotAvailable
 from ._reconstruction import reconstruct_volume
+
+# The laser lines as wired on this rig, listed by wavelength: (nm, LASERid).
+# LASERid is the firmware channel (GPIO 16/17/18/19 for 1/2/3/4) -- it is the
+# wiring order, not the spectral order, which is why 405 comes last.
+LASER_LINES = ((405, 4), (488, 1), (532, 2), (632, 3))
 
 
 # --------------------------------------------------------------------------- #
@@ -79,6 +87,7 @@ class LSFTControlWidget(QWidget):
         super().__init__()
         self.viewer = napari_viewer
         self.controller: Optional[ESP32Controller] = None
+        self.galvo: Optional[GalvoScanner] = None
         self.source = None
         self._worker: Optional[AcquisitionWorker] = None
         self._build_ui()
@@ -87,15 +96,32 @@ class LSFTControlWidget(QWidget):
     # UI
     # ------------------------------------------------------------------ #
     def _build_ui(self):
+        # The panel is taller than most napari docks, so the whole stack lives
+        # inside a scroll area; otherwise the lower groups are simply clipped.
+        outer = QVBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(outer)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        # Let the dock get narrow without forcing a horizontal scrollbar.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        outer.addWidget(scroll)
+
+        content = QWidget()
         layout = QVBoxLayout()
-        self.setLayout(layout)
+        content.setLayout(layout)
+        scroll.setWidget(content)
 
         title = QLabel("<b>LSFT Control &amp; Acquisition</b>")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        layout.addWidget(self._connection_group())
+        layout.addWidget(self._boards_group())
+        layout.addWidget(self._camera_group())
         layout.addWidget(self._illumination_group())
+        layout.addWidget(self._sheet_group())
         layout.addWidget(self._rotation_group())
         layout.addWidget(self._acquisition_group())
 
@@ -104,29 +130,45 @@ class LSFTControlWidget(QWidget):
         layout.addWidget(self.progress_bar)
         layout.addStretch()
         self._set_hw_enabled(False)
+        self.grp_sheet.setEnabled(False)
 
-    # ---- Connection ----
-    def _connection_group(self):
-        grp = QGroupBox("Connection")
+    # ---- Controller boards ----
+    def _boards_group(self):
+        """The two microcontrollers, together: they are what has to be live
+        before anything else in this panel does something."""
+        grp = QGroupBox("Controller boards")
         form = QFormLayout()
         grp.setLayout(form)
 
-        # ESP32
+        # LSFT board: lasers + capillary rotation.
         self.edit_port = QLineEdit("auto")
         form.addRow("ESP32 port:", self.edit_port)
-        self.spin_steps_per_turn = QSpinBox()
-        self.spin_steps_per_turn.setRange(1, 1_000_000)
-        self.spin_steps_per_turn.setValue(3200)
-        form.addRow("Steps/turn:", self.spin_steps_per_turn)
         self.btn_connect_esp = QPushButton("Connect ESP32")
         self.btn_connect_esp.clicked.connect(self._connect_esp32)
         form.addRow(self.btn_connect_esp)
         self.lbl_esp = QLabel("<i>ESP32: not connected</i>")
         form.addRow(self.lbl_esp)
 
-        # Camera
+        # Galvo scanner: a second board on its own port. It has no usable
+        # auto-detection -- it enumerates as a bare USB-Serial/JTAG device.
+        self.edit_galvo_port = QLineEdit("COM7")
+        form.addRow("Galvo port:", self.edit_galvo_port)
+        self.btn_connect_galvo = QPushButton("Connect galvo")
+        self.btn_connect_galvo.clicked.connect(self._connect_galvo)
+        form.addRow(self.btn_connect_galvo)
+        self.lbl_galvo = QLabel("<i>Galvo: not connected</i>")
+        form.addRow(self.lbl_galvo)
+        return grp
+
+    # ---- Camera ----
+    def _camera_group(self):
+        grp = QGroupBox("Camera")
+        form = QFormLayout()
+        grp.setLayout(form)
+
         self.combo_source = QComboBox()
-        self.combo_source.addItems(["imswitch-http", "imswitch-stream", "gxipy"])
+        self.combo_source.addItems(["imswitch-http", "imswitch-stream", "gxipy",
+                                    "simulated"])
         form.addRow("Camera source:", self.combo_source)
         self.edit_cam_host = QLineEdit("127.0.0.1")
         form.addRow("ImSwitch host:", self.edit_cam_host)
@@ -147,10 +189,13 @@ class LSFTControlWidget(QWidget):
         form = QFormLayout()
         grp.setLayout(form)
 
-        self.spin_laser_ch = QSpinBox()
-        self.spin_laser_ch.setRange(1, 4)
-        self.spin_laser_ch.setValue(1)
-        form.addRow("Laser channel:", self.spin_laser_ch)
+        # Named by wavelength; the firmware channel travels in the item data,
+        # so rewiring only means editing LASER_LINES.
+        self.combo_laser = QComboBox()
+        for nm, channel in LASER_LINES:
+            self.combo_laser.addItem(f"{nm} nm  (ch {channel})", channel)
+        self.combo_laser.setCurrentIndex(1)  # 488 nm
+        form.addRow("Laser line:", self.combo_laser)
         self.spin_laser_val = QSpinBox()
         self.spin_laser_val.setRange(0, 255)
         self.spin_laser_val.setValue(128)
@@ -161,24 +206,65 @@ class LSFTControlWidget(QWidget):
         row.addWidget(b_on); row.addWidget(b_off)
         form.addRow(row)
 
-        row_led = QHBoxLayout()
-        b_led_on = QPushButton("LED ON"); b_led_on.clicked.connect(self._led_on)
-        b_led_off = QPushButton("LED OFF"); b_led_off.clicked.connect(self._led_off)
-        row_led.addWidget(b_led_on); row_led.addWidget(b_led_off)
-        form.addRow(row_led)
+        return grp
 
-        self.spin_galvo_freq = QDoubleSpinBox()
-        self.spin_galvo_freq.setRange(0, 1000); self.spin_galvo_freq.setValue(10)
-        form.addRow("Galvo freq (Hz):", self.spin_galvo_freq)
-        self.spin_galvo_amp = QDoubleSpinBox()
-        self.spin_galvo_amp.setRange(0, 10); self.spin_galvo_amp.setValue(1)
-        self.spin_galvo_amp.setSingleStep(0.1)
-        form.addRow("Galvo amplitude:", self.spin_galvo_amp)
+    # ---- Light sheet ----
+    def _sheet_group(self):
+        """Its own group because it is its own board: the sheet follows the
+        galvo connection, not the ESP32 one."""
+        self.grp_sheet = QGroupBox("Light sheet")
+        grp = self.grp_sheet
+        form = QFormLayout()
+        grp.setLayout(form)
+
+        # Sweep geometry in DAC counts (12 bit, 0-4095). Frequency and
+        # amplitude are gone: they described the ESP32's own DAC waveform, and
+        # the sheet is now formed by the UC2 galvo board instead.
+        self.spin_sheet_center = QSpinBox()
+        self.spin_sheet_center.setRange(0, 4095); self.spin_sheet_center.setValue(2048)
+        form.addRow("Sheet centre (0-4095):", self.spin_sheet_center)
+        self.spin_sheet_width = QSpinBox()
+        self.spin_sheet_width.setRange(0, 4095); self.spin_sheet_width.setValue(2048)
+        form.addRow("Sheet width:", self.spin_sheet_width)
+        self.spin_sheet_step = QSpinBox()
+        self.spin_sheet_step.setRange(1, 512); self.spin_sheet_step.setValue(8)
+        form.addRow("Sweep step:", self.spin_sheet_step)
+        self.spin_sheet_dwell = QSpinBox()
+        self.spin_sheet_dwell.setRange(0, 10000); self.spin_sheet_dwell.setValue(10)
+        form.addRow("Dwell (us):", self.spin_sheet_dwell)
+        self.spin_sheet_parkx = QSpinBox()
+        self.spin_sheet_parkx.setRange(0, 4095); self.spin_sheet_parkx.setValue(2048)
+        form.addRow("Slow axis park X:", self.spin_sheet_parkx)
         row_g = QHBoxLayout()
         b_g_on = QPushButton("Light sheet ON"); b_g_on.clicked.connect(self._galvo_on)
         b_g_off = QPushButton("Light sheet OFF"); b_g_off.clicked.connect(self._galvo_off)
         row_g.addWidget(b_g_on); row_g.addWidget(b_g_off)
         form.addRow(row_g)
+
+        # Hold the mirrors at fixed DAC codes. This is how you find out whether
+        # the galvo really moves: step a value through 0 / 1024 / 2048 / 3072 /
+        # 4095 with a meter across a differential output and watch it walk over
+        # roughly +/-10 V. No scan engine, no optics involved.
+        #
+        # X and Y are separate on purpose: setting them to *different* codes is
+        # what tells you which physical output is which, since the silkscreen
+        # names them L and R (the board descends from a laser-show design).
+        self.spin_park_x = QSpinBox()
+        self.spin_park_x.setRange(0, 4095)
+        self.spin_park_x.setValue(2048)
+        self.spin_park_x.setSingleStep(1024)
+        form.addRow("Park X (DAC A):", self.spin_park_x)
+        self.spin_park_y = QSpinBox()
+        self.spin_park_y.setRange(0, 4095)
+        self.spin_park_y.setValue(2048)
+        self.spin_park_y.setSingleStep(1024)
+        form.addRow("Park Y (DAC B):", self.spin_park_y)
+        b_park = QPushButton("Hold mirrors at these positions")
+        b_park.clicked.connect(self._galvo_park)
+        form.addRow(b_park)
+        self.lbl_park = QLabel("")
+        self.lbl_park.setWordWrap(True)
+        form.addRow(self.lbl_park)
         return grp
 
     # ---- Rotation ----
@@ -250,11 +336,43 @@ class LSFTControlWidget(QWidget):
     # ------------------------------------------------------------------ #
     # Connection handlers
     # ------------------------------------------------------------------ #
+    def _connect_galvo(self):
+        try:
+            self.galvo = GalvoScanner(
+                port=self.edit_galvo_port.text().strip() or "COM7",
+            ).connect()
+        except GalvoNotAvailable as e:
+            self.galvo = None
+            self.lbl_galvo.setText("<i>Galvo: not connected</i>")
+            show_info(str(e))
+            return
+        # connect() already applied the sweep, because opening the port reboots
+        # the board and nothing it stores survives that.
+        self._apply_sheet()
+        self.lbl_galvo.setText(f"<b>Galvo:</b> {self.galvo.identify()}")
+        self.grp_sheet.setEnabled(True)
+
+    def _sheet_kwargs(self) -> dict:
+        return dict(
+            center=self.spin_sheet_center.value(),
+            width=self.spin_sheet_width.value(),
+            step=self.spin_sheet_step.value(),
+            dwell_us=self.spin_sheet_dwell.value(),
+            park_x=self.spin_sheet_parkx.value(),
+        )
+
+    def _apply_sheet(self) -> bool:
+        if self.galvo is None:
+            return False
+        return self.galvo.configure_sheet(**self._sheet_kwargs())
+
     def _connect_esp32(self):
         try:
+            # Steps per turn and the axis are properties of the rig, not
+            # choices: the capillary always hangs on the A axis, and its
+            # resolution is whatever one motor step is (see STEPS_PER_TURN).
             self.controller = ESP32Controller(
                 serialport=self.edit_port.text().strip() or "auto",
-                steps_per_turn=self.spin_steps_per_turn.value(),
             ).connect()
         except ESP32NotAvailable as e:
             self.controller = None
@@ -262,7 +380,11 @@ class LSFTControlWidget(QWidget):
             show_info(str(e))
             return
         state = "connected" if self.controller.is_connected else "MOCK (no hardware)"
-        self.lbl_esp.setText(f"<b>ESP32: {state}</b>")
+        # Name the board that actually answered: with two ESP32s on the bench,
+        # "connected" alone hides which one is listening.
+        self.lbl_esp.setText(
+            f"<b>ESP32: {state}</b><br><small>{self.controller.identify()}</small>"
+        )
         self._set_hw_enabled(True)
 
     def _connect_camera(self):
@@ -280,6 +402,13 @@ class LSFTControlWidget(QWidget):
             return
         self.lbl_cam.setText(f"<b>Camera: {kind} connected</b>")
 
+        # The simulated rig is its own rotation controller, so picking it also
+        # satisfies the ESP32 half - no hardware needed to exercise the widget.
+        if kind == "simulated":
+            self.controller = self.source
+            self.lbl_esp.setText("<b>ESP32: SIMULATED</b>")
+            self._set_hw_enabled(True)
+
     def _set_hw_enabled(self, enabled: bool):
         # illumination/rotation need the ESP32; acquisition needs both (checked at run)
         for grp in self.findChildren(QGroupBox):
@@ -295,31 +424,55 @@ class LSFTControlWidget(QWidget):
             return False
         return True
 
+    def _laser_channel(self) -> int:
+        """Firmware LASERid of the selected line."""
+        return int(self.combo_laser.currentData())
+
     def _laser_on(self):
         if self._guard():
-            self.controller.laser_on(self.spin_laser_val.value(), self.spin_laser_ch.value())
+            self.controller.laser_on(self.spin_laser_val.value(),
+                                     self._laser_channel())
 
     def _laser_off(self):
         if self._guard():
-            self.controller.laser_off(self.spin_laser_ch.value())
+            self.controller.laser_off(self._laser_channel())
 
-    def _led_on(self):
-        if self._guard():
-            self.controller.set_led(on=True)
-
-    def _led_off(self):
-        if self._guard():
-            self.controller.led_off()
+    def _galvo_guard(self) -> bool:
+        # The sheet is no longer on the ESP32: GALVO_ENABLED is off in the LSFT
+        # firmware and its DAC pins now drive the rotation stepper, so there is
+        # no fallback to offer here.
+        if self.galvo is None:
+            show_info("Connect the galvo board first (Galvo port).")
+            return False
+        return True
 
     def _galvo_on(self):
-        if self._guard():
-            self.controller.light_sheet_on(
-                frequency=self.spin_galvo_freq.value(),
-                amplitude=self.spin_galvo_amp.value())
+        if self._galvo_guard():
+            self._apply_sheet()
+            if not self.galvo.light_sheet_on():
+                show_info("Galvo did not acknowledge - is it still scanning a "
+                          "long frame? Try again.")
 
     def _galvo_off(self):
-        if self._guard():
-            self.controller.light_sheet_off()
+        if self._galvo_guard():
+            self.galvo.light_sheet_off()
+
+    @staticmethod
+    def _dac_volts(code: int) -> float:
+        """Roughly what a differential output should read at this DAC code."""
+        return (code / 4095.0 * 20.0) - 10.0
+
+    def _galvo_park(self):
+        if not self._galvo_guard():
+            return
+        x, y = self.spin_park_x.value(), self.spin_park_y.value()
+        if self.galvo.park(x=x, y=y):
+            self.lbl_park.setText(
+                f"<i>holding X={x} (~{self._dac_volts(x):+.1f} V) and "
+                f"Y={y} (~{self._dac_volts(y):+.1f} V). Measure across + and "
+                f"&minus; of one output header, not against ground.</i>")
+        else:
+            self.lbl_park.setText("<i>no acknowledgement &mdash; try again</i>")
 
     # ------------------------------------------------------------------ #
     # Rotation handlers
@@ -357,16 +510,22 @@ class LSFTControlWidget(QWidget):
         if self._worker is not None and self._worker.isRunning():
             show_info("Acquisition already running.")
             return
+        if self.chk_auto_galvo.isChecked() and self.galvo is None:
+            # Without a galvo board there is nothing to switch: falling back to
+            # the ESP32 would call /dac_act, which its firmware only
+            # acknowledges. Say so rather than record a stack in the dark.
+            show_info("Auto light sheet is on but no galvo board is connected "
+                      "- the sheet will not be switched. Connect it, or untick "
+                      "the box and drive the sweep yourself.")
 
         params = dict(
             n_angles=self.spin_nangles.value(),
             angle_start=self.spin_astart.value(),
             angle_stop=self.spin_astop.value(),
             laser_value=self.spin_laser_val.value(),
-            laser_channel=self.spin_laser_ch.value(),
+            laser_channel=self._laser_channel(),
             auto_galvo=self.chk_auto_galvo.isChecked(),
-            galvo_freq=self.spin_galvo_freq.value(),
-            galvo_amplitude=self.spin_galvo_amp.value(),
+            sheet=self.galvo,
             settle=self.spin_settle.value(),
             output=self.edit_out.text().strip() or None,
         )

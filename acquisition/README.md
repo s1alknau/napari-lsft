@@ -25,6 +25,30 @@ that differ per rig:
 | `detectors.*.cameraListIndex` | index of your camera (Daheng MER2-1220 via `GXPIPYManager`; `0` for a single camera). Not a COM port — USB3 cameras are addressed by list index. |
 | `positioners.ESPStage.managerProperties.stepsizeA` | rotation step calibration |
 
+### Testing without hardware
+
+`LSFT.json` already boots with no camera and no ESP32 attached — nothing to
+change. `GXPIPYManager` catches the camera init failure and loads
+`MockCameraTIS` (512×512 uint16), and a missing ESP32 only logs
+`[OpenDevice]: Port not found`. But the mock frames are just a "camera is not
+connected" timestamp overlay, so they exercise the plumbing, not the
+reconstruction.
+
+For a dry run with real image data use [`LSFT_dummy.json`](LSFT_dummy.json),
+which swaps every device for its virtual counterpart (`VirtualCameraManager` +
+`VirtualStageManager` + `VirtualLaserManager` on a `VirtualMicroscope`). It
+keeps the `A` axis and the `LightSheet` / `ESPStage` names, so `acquire_lsft.py`
+discovers the same devices as on the rig. Frames are 400×300 — pass a small
+`--n-angles` and expect a meaningless volume; the point is that the
+rotate → snap → stack → TIFF → reconstruct path runs end to end:
+
+```bash
+python acquire_lsft.py --n-angles 8 --no-auto-galvo --out dummy_stack.tif
+```
+
+`--no-auto-galvo` is required here: the galvo lives on the ESP32 laser manager,
+and `VirtualLaserManager` has no `setGalvo`.
+
 **The one non-negotiable bit:** the positioner must list the rotation axis:
 
 ```json
@@ -34,6 +58,12 @@ that differ per rig:
 The stock UC2 light-sheet configs only list `X, Y, Z`, so the capillary cannot
 be rotated until you add `"A"`. The `ESP32StageManager` already supports the
 A-axis; it just has to be declared.
+
+> **Changing:** the light sheet is moving to the UC2 galvo scanner board with
+> its own Seeed Studio controller — a second UC2-REST serial device driven by
+> ImSwitch's `ESP32GalvoScannerManager`. See
+> [`galvo_scanner.md`](galvo_scanner.md); the description below applies to the
+> current, DAC-on-the-main-ESP32 arrangement.
 
 The galvo / light sheet is **not** a separate device — it is driven by the
 ESP32 firmware through the `ESP32LEDLaserManager`. It stays manually
