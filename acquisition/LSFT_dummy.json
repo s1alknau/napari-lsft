@@ -1,0 +1,92 @@
+{
+    "detectors": {
+        "LightSheet": {
+            "analogChannel": null,
+            "digitalLine": null,
+            "managerName": "VirtualCameraManager",
+            "managerProperties": {
+                "isRGB": 0,
+                "cameraListIndex": 0,
+                "cameraEffPixelsize": 1,
+                "virtcam": {
+                    "exposure": 10,
+                    "gain": 0,
+                    "blacklevel": 100
+                }
+            },
+            "forAcquisition": true
+        }
+    },
+    "lasers": {
+        "635 Laser": {
+            "analogChannel": null,
+            "digitalLine": null,
+            "managerName": "VirtualLaserManager",
+            "managerProperties": {
+                "rs232device": "VirtualMicroscope",
+                "channel_index": 1
+            },
+            "valueRangeMin": 0,
+            "valueRangeMax": 255,
+            "wavelength": 635,
+            "valueRangeStep": 1.0
+        }
+    },
+    "positioners": {
+        "ESPStage": {
+            "analogChannel": null,
+            "digitalLine": null,
+            "managerName": "VirtualStageManager",
+            "managerProperties": {
+                "rs232device": "VirtualMicroscope",
+                "isEnable": true,
+                "stepsizeX": 1,
+                "stepsizeY": 1,
+                "stepsizeZ": 1,
+                "stepsizeA": 1,
+                "initialSpeed": {
+                    "X": 15000,
+                    "Y": 15000,
+                    "Z": 15000,
+                    "A": 15000
+                }
+            },
+            "axes": [
+                "X",
+                "Y",
+                "Z",
+                "A"
+            ],
+            "isPositiveDirection": true,
+            "forPositioning": true,
+            "forScanning": true
+        }
+    },
+    "rs232devices": {
+        "VirtualMicroscope": {
+            "managerName": "VirtualMicroscopeManager",
+            "managerProperties": {}
+        }
+    },
+    "pyroServerInfo": {
+        "name": "ImSwitchServer",
+        "host": "127.0.0.1",
+        "port": 54333
+    },
+    "rois": {
+        "Full chip": {
+            "x": 0,
+            "y": 0,
+            "w": 400,
+            "h": 300
+        }
+    },
+    "availableWidgets": [
+        "Settings",
+        "View",
+        "Recording",
+        "Image",
+        "Laser",
+        "Positioner"
+    ]
+}

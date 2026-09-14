@@ -257,17 +257,26 @@ class ImSwitchStreamSource(FrameSource):
 # Factory
 # --------------------------------------------------------------------------- #
 
+def _simulated_source(**kwargs):
+    from ._simulate import SimulatedRig  # local: pulls in scipy
+    return SimulatedRig(**kwargs)
+
+
 _SOURCES = {
     "imswitch-http": ImSwitchHTTPSource,
     "imswitch-stream": ImSwitchStreamSource,
     "gxipy": GxipySource,
+    "simulated": _simulated_source,
 }
 
 
 def make_frame_source(kind: str = "imswitch-http", **kwargs) -> FrameSource:
     """Create a frame source by name.
 
-    kind : "imswitch-http" (default) | "imswitch-stream" | "gxipy"
+    kind : "imswitch-http" (default) | "imswitch-stream" | "gxipy" | "simulated"
+
+    "simulated" needs no hardware at all and doubles as the rotation
+    controller; see :class:`napari_lsft._simulate.SimulatedRig`.
     """
     try:
         cls = _SOURCES[kind]
